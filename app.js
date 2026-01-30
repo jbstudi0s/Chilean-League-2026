@@ -636,6 +636,12 @@ function openVideoPlayer(partido) {
     // Mostrar modal
     modal.classList.add('active');
     
+    // Mostrar información de conexión si es móvil
+    const connectionInfo = getConnectionInfo();
+    if (connectionInfo.isMobile) {
+        showConnectionStatus(connectionInfo);
+    }
+    
     // Cargar video
     loadHLSStream(partido.link);
     
@@ -676,30 +682,69 @@ function closeVideoPlayer() {
 function loadHLSStream(streamUrl) {
     if (!streamUrl) return;
     
+    // Detectar tipo de conexión
+    const connectionInfo = getConnectionInfo();
+    console.log('Información de conexión:', connectionInfo);
+    
     if (Hls.isSupported()) {
-        // Usar HLS.js para navegadores que no soportan HLS nativamente
-        hls = new Hls({
+        // Configuración optimizada para redes móviles
+        const hlsConfig = {
             enableWorker: true,
-            lowLatencyMode: true,
-        });
+            lowLatencyMode: false, // Desactivar para mejor estabilidad en móviles
+            maxBufferLength: connectionInfo.isMobile ? 10 : 30, // Buffer más pequeño en móviles
+            maxMaxBufferLength: connectionInfo.isMobile ? 20 : 60,
+            maxBufferSize: connectionInfo.isMobile ? 60 * 1000 * 1000 : 120 * 1000 * 1000, // 60MB vs 120MB
+            maxBufferHole: 0.5,
+            highBufferWatchdogPeriod: 2,
+            nudgeOffset: 0.1,
+            nudgeMaxRetry: 3,
+            maxFragLookUpTolerance: 0.25,
+            liveSyncDurationCount: connectionInfo.isMobile ? 2 : 3,
+            liveMaxLatencyDurationCount: connectionInfo.isMobile ? 5 : 10,
+            // Configuración específica para redes móviles
+            abrEwmaFastLive: connectionInfo.isMobile ? 2.0 : 3.0,
+            abrEwmaSlowLive: connectionInfo.isMobile ? 7.0 : 9.0,
+            abrEwmaFastVoD: connectionInfo.isMobile ? 2.0 : 3.0,
+            abrEwmaSlowVoD: connectionInfo.isMobile ? 7.0 : 9.0,
+            abrEwmaDefaultEstimate: connectionInfo.isMobile ? 500000 : 1000000, // 500kbps vs 1Mbps inicial
+            abrBandWidthFactor: connectionInfo.isMobile ? 0.7 : 0.95,
+            abrBandWidthUpFactor: connectionInfo.isMobile ? 0.6 : 0.7,
+            // Configuración de fragmentos
+            fragLoadingTimeOut: connectionInfo.isMobile ? 30000 : 20000, // 30s vs 20s timeout
+            fragLoadingMaxRetry: connectionInfo.isMobile ? 6 : 3,
+            fragLoadingRetryDelay: connectionInfo.isMobile ? 2000 : 1000,
+            fragLoadingMaxRetryTimeout: connectionInfo.isMobile ? 64000 : 32000,
+            // Configuración de manifiestos
+            manifestLoadingTimeOut: connectionInfo.isMobile ? 20000 : 10000,
+            manifestLoadingMaxRetry: connectionInfo.isMobile ? 4 : 2,
+            manifestLoadingRetryDelay: connectionInfo.isMobile ? 2000 : 1000,
+            manifestLoadingMaxRetryTimeout: connectionInfo.isMobile ? 32000 : 16000,
+            // Configuración de nivel inicial
+            startLevel: connectionInfo.isMobile ? (connectionInfo.effectiveType === '2g' ? 0 : 1) : -1,
+            testBandwidth: connectionInfo.isMobile,
+            progressive: true,
+            // Headers para mejorar compatibilidad con redes móviles
+            xhrSetup: function(xhr, url) {
+                xhr.setRequestHeader('Cache-Control', 'no-cache');
+                xhr.setRequestHeader('Pragma', 'no-cache');
+                if (connectionInfo.isMobile) {
+                    xhr.timeout = 30000; // 30 segundos timeout para móviles
+                }
+            }
+        };
+        
+        hls = new Hls(hlsConfig);
+        
+        // Configurar eventos específicos para redes móviles
+        setupMobileHLSEvents(hls, connectionInfo);
         
         hls.loadSource(streamUrl);
         hls.attachMedia(videoPlayer);
         
-        hls.on(Hls.Events.MANIFEST_PARSED, function() {
-            console.log('Stream cargado correctamente');
-        });
-        
-        hls.on(Hls.Events.ERROR, function(event, data) {
-            console.error('Error en HLS:', data);
-            if (data.fatal) {
-                showStreamError();
-            }
-        });
-        
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari soporta HLS nativamente
+        // Safari soporta HLS nativamente - configurar para móviles
         videoPlayer.src = streamUrl;
+        setupNativeHLSForMobile(videoPlayer, connectionInfo);
     } else {
         showStreamError();
     }
@@ -738,6 +783,317 @@ function toggleFullscreen() {
 function isMobile() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
+
+// Función para detectar información de conexión
+function getConnectionInfo() {
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const isMobileDevice = isMobile();
+    
+    let connectionInfo = {
+        isMobile: isMobileDevice,
+        effectiveType: '4g', // Por defecto
+        downlink: 10, // Por defecto 10 Mbps
+        rtt: 100, // Por defecto 100ms
+        saveData: false
+    };
+    
+    if (connection) {
+        connectionInfo.effectiveType = connection.effectiveType || '4g';
+        connectionInfo.downlink = connection.downlink || 10;
+        connectionInfo.rtt = connection.rtt || 100;
+        connectionInfo.saveData = connection.saveData || false;
+    }
+    
+    // Detectar si está usando datos móviles (heurística)
+    if (isMobileDevice) {
+        // Si es móvil y la conexión es lenta, probablemente es datos móviles
+        if (connectionInfo.effectiveType === '2g' || connectionInfo.effectiveType === '3g' || 
+            (connectionInfo.effectiveType === '4g' && connectionInfo.downlink < 5)) {
+            connectionInfo.isMobileNetwork = true;
+        } else {
+            // Podría ser WiFi en móvil
+            connectionInfo.isMobileNetwork = connectionInfo.downlink < 10;
+        }
+    } else {
+        connectionInfo.isMobileNetwork = false;
+    }
+    
+    return connectionInfo;
+}
+
+// Configurar eventos HLS específicos para redes móviles
+function setupMobileHLSEvents(hls, connectionInfo) {
+    let retryCount = 0;
+    let maxRetries = connectionInfo.isMobile ? 5 : 3;
+    
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+        console.log('✅ Stream cargado correctamente');
+        retryCount = 0; // Resetear contador de reintentos
+        
+        // En redes móviles, comenzar con calidad más baja
+        if (connectionInfo.isMobile && connectionInfo.effectiveType === '2g') {
+            hls.startLevel = 0; // Calidad más baja
+        }
+    });
+    
+    hls.on(Hls.Events.ERROR, function(event, data) {
+        console.error('❌ Error en HLS:', data);
+        
+        if (data.fatal) {
+            switch(data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.log('🔄 Error de red, intentando recuperar...');
+                    handleNetworkError(hls, data, retryCount, maxRetries, connectionInfo);
+                    retryCount++;
+                    break;
+                    
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log('🔄 Error de media, intentando recuperar...');
+                    try {
+                        hls.recoverMediaError();
+                    } catch (err) {
+                        console.error('❌ No se pudo recuperar del error de media:', err);
+                        showMobileStreamError(connectionInfo);
+                    }
+                    break;
+                    
+                default:
+                    console.error('❌ Error fatal no recuperable:', data);
+                    showMobileStreamError(connectionInfo);
+                    break;
+            }
+        } else {
+            // Errores no fatales - solo registrar
+            console.warn('⚠️ Error no fatal en HLS:', data);
+        }
+    });
+    
+    // Eventos específicos para monitoreo de calidad en móviles
+    hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+        console.log(`📊 Calidad cambiada a nivel ${data.level}`);
+        
+        // En redes móviles lentas, evitar subir demasiado rápido
+        if (connectionInfo.isMobile && connectionInfo.effectiveType === '2g') {
+            if (data.level > 1) {
+                console.log('📉 Forzando calidad baja para red 2G');
+                hls.nextLevel = 0;
+            }
+        }
+    });
+    
+    hls.on(Hls.Events.BUFFER_STALLED, function() {
+        console.warn('⏸️ Buffer detenido - ajustando para red móvil');
+        if (connectionInfo.isMobile) {
+            // Reducir calidad si el buffer se detiene frecuentemente
+            hls.nextLevel = Math.max(0, hls.currentLevel - 1);
+        }
+    });
+    
+    hls.on(Hls.Events.FRAG_LOAD_PROGRESS, function(event, data) {
+        // Monitorear progreso de carga en redes móviles
+        if (connectionInfo.isMobile && data.stats && data.stats.loading) {
+            const loadTime = data.stats.loading.end - data.stats.loading.start;
+            if (loadTime > 10000) { // Más de 10 segundos
+                console.warn('🐌 Carga lenta detectada, ajustando calidad');
+                hls.nextLevel = Math.max(0, hls.currentLevel - 1);
+            }
+        }
+    });
+}
+
+// Manejar errores de red con reintentos inteligentes
+function handleNetworkError(hls, data, retryCount, maxRetries, connectionInfo) {
+    if (retryCount < maxRetries) {
+        const delay = connectionInfo.isMobile ? 
+            Math.min(2000 * Math.pow(2, retryCount), 10000) : // Backoff exponencial para móviles
+            1000 * (retryCount + 1); // Backoff lineal para desktop
+        
+        console.log(`🔄 Reintentando en ${delay}ms (intento ${retryCount + 1}/${maxRetries})`);
+        
+        setTimeout(() => {
+            try {
+                hls.startLoad();
+            } catch (err) {
+                console.error('❌ Error al reintentar:', err);
+                if (retryCount >= maxRetries - 1) {
+                    showMobileStreamError(connectionInfo);
+                }
+            }
+        }, delay);
+    } else {
+        console.error('❌ Máximo de reintentos alcanzado');
+        showMobileStreamError(connectionInfo);
+    }
+}
+
+// Configurar HLS nativo para Safari en móviles
+function setupNativeHLSForMobile(videoElement, connectionInfo) {
+    videoElement.addEventListener('error', function(e) {
+        console.error('❌ Error en video nativo:', e);
+        showMobileStreamError(connectionInfo);
+    });
+    
+    videoElement.addEventListener('stalled', function() {
+        console.warn('⏸️ Video detenido en Safari móvil');
+        if (connectionInfo.isMobile) {
+            // Intentar recargar después de un breve delay
+            setTimeout(() => {
+                if (videoElement.readyState < 3) { // HAVE_FUTURE_DATA
+                    videoElement.load();
+                }
+            }, 3000);
+        }
+    });
+    
+    videoElement.addEventListener('waiting', function() {
+        console.log('⏳ Esperando datos en Safari móvil');
+    });
+    
+    videoElement.addEventListener('canplay', function() {
+        console.log('✅ Video listo para reproducir en Safari móvil');
+    });
+}
+
+// Mostrar error específico para redes móviles
+function showMobileStreamError(connectionInfo) {
+    let message = 'Error al cargar la transmisión.';
+    
+    if (connectionInfo.isMobile) {
+        if (connectionInfo.effectiveType === '2g') {
+            message += '\n\n📶 Red 2G detectada: La transmisión puede ser inestable. Intenta conectarte a WiFi para mejor experiencia.';
+        } else if (connectionInfo.effectiveType === '3g') {
+            message += '\n\n📶 Red 3G detectada: Puede haber interrupciones. WiFi recomendado para mejor calidad.';
+        } else if (connectionInfo.isMobileNetwork) {
+            message += '\n\n📱 Red móvil detectada: Si tienes problemas, intenta conectarte a WiFi.';
+        }
+        
+        message += '\n\n🔄 Consejos:\n• Verifica tu señal móvil\n• Cierra otras apps que usen internet\n• Intenta recargar la página';
+    } else {
+        message += '\n\nVerifica tu conexión a internet e inténtalo nuevamente.';
+    }
+    
+    alert(message);
+}
+
+// Mostrar estado de conexión para usuarios móviles
+function showConnectionStatus(connectionInfo) {
+    // Crear o actualizar el indicador de conexión
+    let statusElement = document.getElementById('connection-status');
+    if (!statusElement) {
+        statusElement = document.createElement('div');
+        statusElement.id = 'connection-status';
+        statusElement.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 10001;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.3s ease;
+        `;
+        document.body.appendChild(statusElement);
+    }
+    
+    let statusIcon = '';
+    let statusText = '';
+    let statusColor = '';
+    
+    if (connectionInfo.effectiveType === '2g') {
+        statusIcon = '📶';
+        statusText = '2G - Calidad baja';
+        statusColor = '#e74c3c';
+    } else if (connectionInfo.effectiveType === '3g') {
+        statusIcon = '📶';
+        statusText = '3G - Calidad media';
+        statusColor = '#f39c12';
+    } else if (connectionInfo.effectiveType === '4g') {
+        if (connectionInfo.downlink < 5) {
+            statusIcon = '📱';
+            statusText = '4G lento - Datos móviles';
+            statusColor = '#f39c12';
+        } else {
+            statusIcon = '📶';
+            statusText = '4G - Buena conexión';
+            statusColor = '#27ae60';
+        }
+    } else {
+        statusIcon = '🌐';
+        statusText = 'WiFi - Óptima';
+        statusColor = '#27ae60';
+    }
+    
+    statusElement.innerHTML = `${statusIcon} ${statusText}`;
+    statusElement.style.backgroundColor = statusColor;
+    
+    // Auto-ocultar después de 5 segundos
+    setTimeout(() => {
+        if (statusElement) {
+            statusElement.style.opacity = '0.6';
+            statusElement.style.transform = 'scale(0.9)';
+        }
+    }, 5000);
+    
+    // Ocultar completamente después de 10 segundos
+    setTimeout(() => {
+        if (statusElement && statusElement.parentNode) {
+            statusElement.parentNode.removeChild(statusElement);
+        }
+    }, 10000);
+}
+
+// Monitorear cambios de conexión en tiempo real
+function startConnectionMonitoring() {
+    if ('connection' in navigator) {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        
+        connection.addEventListener('change', function() {
+            const newConnectionInfo = getConnectionInfo();
+            console.log('🔄 Conexión cambió:', newConnectionInfo);
+            
+            // Si hay un video reproduciéndose y es móvil, ajustar configuración
+            if (hls && newConnectionInfo.isMobile) {
+                adjustStreamingForConnection(newConnectionInfo);
+            }
+            
+            // Mostrar nuevo estado si el modal de video está abierto
+            const modal = document.getElementById('video-modal');
+            if (modal && modal.classList.contains('active')) {
+                showConnectionStatus(newConnectionInfo);
+            }
+        });
+    }
+}
+
+// Ajustar streaming según cambios de conexión
+function adjustStreamingForConnection(connectionInfo) {
+    if (!hls) return;
+    
+    console.log('🔧 Ajustando streaming para nueva conexión:', connectionInfo);
+    
+    // Ajustar nivel de calidad según el tipo de conexión
+    if (connectionInfo.effectiveType === '2g') {
+        hls.nextLevel = 0; // Forzar calidad más baja
+        console.log('📉 Forzando calidad baja para 2G');
+    } else if (connectionInfo.effectiveType === '3g') {
+        hls.nextLevel = Math.min(1, hls.levels.length - 1); // Calidad media-baja
+        console.log('📊 Ajustando a calidad media para 3G');
+    } else if (connectionInfo.effectiveType === '4g' && connectionInfo.downlink < 5) {
+        hls.nextLevel = Math.min(2, hls.levels.length - 1); // Calidad media
+        console.log('📊 Ajustando a calidad media para 4G lento');
+    }
+    // Para 4G rápido o WiFi, dejar que HLS.js maneje automáticamente
+}
+
+// Inicializar monitoreo de conexión al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    startConnectionMonitoring();
+});
 
 // ========================================
 // FUNCIONES PARA GESTIONAR PARTIDOS
