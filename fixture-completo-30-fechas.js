@@ -17,7 +17,7 @@ const partidosData = [
         fecha: "2026-01-30",
         escudoLocal: "img/udechile.svg",
         escudoVisita: "img/audax.svg",
-        link: "https://smjt9q.envivoslatam.org/hotflix/premiere1/index.m3u8?token=7037b67f2b51f232ef7009ff24568ba29a0ce142-f4-1769779941-1769725941&ip=190.101.34.107"
+        link: "https://kh5vy.envivoslatam.org/tntsports/tracks-v1a1/mono.m3u8?ip=190.101.34.107&token=223f5960f3bb3ec95f5e8559bfa0c3dfb3ec571a-34-1769842572-1769788572"
     },
 
     // ========================================
@@ -2578,4 +2578,5 @@ Este archivo fue generado con Python extrayendo
 datos del fixture oficial del campeonato chileno.
 
 🔗 FUENTE: Campeonato Chileno 2026 - Liga de Primera
+
 */
