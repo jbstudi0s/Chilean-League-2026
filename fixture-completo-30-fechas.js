@@ -2578,5 +2578,4 @@ Este archivo fue generado con Python extrayendo
 datos del fixture oficial del campeonato chileno.
 
 🔗 FUENTE: Campeonato Chileno 2026 - Liga de Primera
-
 */
