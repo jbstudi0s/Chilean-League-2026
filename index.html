@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1a1a">
+    <title>Chilean League 2026</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="favicon.png">
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- HLS.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>⚽ Chilean League 2026</h1>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Home View -->
+        <div id="home-view" class="view active">
+            <!-- News Banners -->
+            <div class="news-banners">
+                <div class="banner-container">
+                    <div class="banner-slide active" data-banner="0">
+                        <div class="banner-content">
+                            <div class="banner-category">ÚLTIMAS NOTICIAS</div>
+                            <h3 class="banner-title">Colo-Colo refuerza su plantel para el 2026</h3>
+                            <p class="banner-description">El Cacique busca nuevos talentos para mantener su hegemonía en el fútbol chileno</p>
+                        </div>
+                        <div class="banner-image">⚽</div>
+                    </div>
+                    <div class="banner-slide" data-banner="1">
+                        <div class="banner-content">
+                            <div class="banner-category">TRANSFERENCIAS</div>
+                            <h3 class="banner-title">Universidad de Chile confirma llegada de nuevo DT</h3>
+                            <p class="banner-description">Los azules apuestan por un técnico con experiencia internacional</p>
+                        </div>
+                        <div class="banner-image">🔵</div>
+                    </div>
+                    <div class="banner-slide" data-banner="2">
+                        <div class="banner-content">
+                            <div class="banner-category">CAMPEONATO</div>
+                            <h3 class="banner-title">Fixture completo del Campeonato 2026 ya disponible</h3>
+                            <p class="banner-description">Conoce todos los partidos de las 30 fechas del torneo nacional</p>
+                        </div>
+                        <div class="banner-image">📅</div>
+                    </div>
+                </div>
+                <div class="banner-indicators">
+                    <button class="banner-dot active" data-slide="0"></button>
+                    <button class="banner-dot" data-slide="1"></button>
+                    <button class="banner-dot" data-slide="2"></button>
+                </div>
+            </div>
+
+            <div class="section-title">
+                <h2>Partidos de Hoy</h2>
+                <span id="today-date"></span>
+            </div>
+            <div id="matches-container" class="matches-container">
+                <!-- Match cards will be generated here -->
+            </div>
+        </div>
+
+        <!-- Matches View -->
+        <div id="matches-view" class="view">
+            <div class="section-title">
+                <h2>Todos los Partidos</h2>
+            </div>
+            <div id="all-matches-container" class="matches-container">
+                <!-- All match cards will be generated here -->
+            </div>
+        </div>
+
+        <!-- Calendar View -->
+        <div id="calendar-view" class="view">
+            <div class="section-title">
+                <h2>Calendario</h2>
+            </div>
+            <div class="calendar-controls">
+                <button id="prev-month" class="calendar-nav-btn">‹</button>
+                <h3 id="current-month">Enero 2026</h3>
+                <button id="next-month" class="calendar-nav-btn">›</button>
+            </div>
+            <div id="calendar-grid" class="calendar-grid">
+                <!-- Calendar grid will be generated here -->
+            </div>
+        </div>
+
+        <!-- Video Player Modal -->
+        <div id="video-modal" class="video-modal">
+            <div class="video-modal-content">
+                <div class="video-header">
+                    <button id="close-video" class="close-btn">&times;</button>
+                    <h3 id="match-title">Partido en Vivo</h3>
+                </div>
+                <div class="video-container">
+                    <video id="video-player" controls playsinline>
+                        Tu navegador no soporta la reproducción de video.
+                    </video>
+                    <div class="video-watermark">Chilean League 2026</div>
+                </div>
+                <div class="video-controls">
+                    <button id="fullscreen-btn" class="control-btn">Pantalla Completa</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button class="nav-btn active" data-view="home-view">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-text">Home</span>
+        </button>
+        <button class="nav-btn" data-view="matches-view">
+            <span class="nav-icon">⚽</span>
+            <span class="nav-text">Partidos</span>
+        </button>
+        <button class="nav-btn" data-view="calendar-view">
+            <span class="nav-icon">📅</span>
+            <span class="nav-text">Calendario</span>
+        </button>
+    </nav>
+
+    <!-- JavaScript -->
+    <script src="fixture-completo-30-fechas.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

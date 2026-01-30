@@ -1,0 +1,30 @@
+{
+  "name": "chilean-league-streaming",
+  "version": "1.0.0",
+  "description": "Aplicación web progresiva para streaming del Campeonato Chileno 2026",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx http-server . -p 8080",
+    "dev": "npx live-server .",
+    "build": "echo 'No build process needed - static files ready for deployment'"
+  },
+  "keywords": [
+    "football",
+    "soccer",
+    "chile",
+    "streaming",
+    "pwa",
+    "sports"
+  ],
+  "author": "Chilean League Streaming",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/chilean-league-streaming.git"
+  },
+  "homepage": "https://your-username.github.io/chilean-league-streaming/",
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "live-server": "^1.2.2"
+  }
+}
