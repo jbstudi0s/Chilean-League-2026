@@ -682,6 +682,13 @@ function loadHLSStream(streamUrl) {
         setupMobileVideoPlayer();
     }
     
+    // Para redes móviles, usar enfoque completamente diferente
+    if (connectionInfo.isMobile && connectionInfo.isMobileNetwork) {
+        console.log('📱 Detectada red móvil - usando estrategia específica');
+        loadMobileNetworkStream(streamUrl, connectionInfo);
+        return;
+    }
+    
     if (Hls.isSupported()) {
         // Configuración ultra-agresiva para redes móviles
         const hlsConfig = {
@@ -831,21 +838,34 @@ function getConnectionInfo() {
         connectionInfo.saveData = connection.saveData || false;
     }
     
-    // Detectar si está usando datos móviles (heurística)
+    // Detectar si está usando datos móviles (heurística más agresiva)
     if (isMobileDevice) {
-        // Si es móvil y la conexión es lenta, probablemente es datos móviles
-        if (connectionInfo.effectiveType === '2g' || connectionInfo.effectiveType === '3g' || 
-            (connectionInfo.effectiveType === '4g' && connectionInfo.downlink < 5)) {
-            connectionInfo.isMobileNetwork = true;
-        } else {
-            // Podría ser WiFi en móvil
-            connectionInfo.isMobileNetwork = connectionInfo.downlink < 10;
+        // Asumir que es red móvil por defecto en dispositivos móviles
+        connectionInfo.isMobileNetwork = true;
+        
+        // Solo considerar WiFi si la velocidad es muy alta
+        if (connectionInfo.effectiveType === '4g' && connectionInfo.downlink > 15) {
+            connectionInfo.isMobileNetwork = false; // Probablemente WiFi
         }
+        
+        // Detectar operadores móviles por IP (heurística adicional)
+        connectionInfo.likelyMobileCarrier = detectMobileCarrier();
     } else {
         connectionInfo.isMobileNetwork = false;
     }
     
     return connectionInfo;
+}
+
+// Detectar operador móvil (heurística básica)
+function detectMobileCarrier() {
+    // Esta es una heurística básica - en producción se podría usar una API
+    const userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.includes('movistar') || userAgent.includes('telefonica')) return 'movistar';
+    if (userAgent.includes('claro')) return 'claro';
+    if (userAgent.includes('entel')) return 'entel';
+    if (userAgent.includes('wom')) return 'wom';
+    return 'unknown';
 }
 
 // Configurar eventos HLS específicos para redes móviles
@@ -1110,6 +1130,372 @@ function enterMobileFullscreen() {
     }
 }
 
+// Cargar stream específicamente para redes móviles
+function loadMobileNetworkStream(streamUrl, connectionInfo) {
+    console.log('📱 Iniciando carga específica para red móvil');
+    console.log('🔗 URL:', streamUrl);
+    console.log('📊 Conexión:', connectionInfo);
+    
+    // Mostrar indicador de carga específico para móviles
+    showMobileLoadingIndicator();
+    
+    // Estrategia 1: Intentar HLS nativo primero (más compatible con móviles)
+    if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+        console.log('🍎 Intentando HLS nativo para red móvil');
+        loadNativeHLSForMobile(streamUrl, connectionInfo);
+        return;
+    }
+    
+    // Estrategia 2: HLS.js con configuración ultra-conservadora
+    if (Hls.isSupported()) {
+        console.log('📱 Usando HLS.js ultra-conservador para red móvil');
+        loadHLSForMobileNetwork(streamUrl, connectionInfo);
+        return;
+    }
+    
+    // Estrategia 3: Fallback directo
+    console.log('🔄 Usando fallback directo para red móvil');
+    tryDirectMobileStreaming(streamUrl, connectionInfo);
+}
+
+// HLS nativo optimizado para redes móviles
+function loadNativeHLSForMobile(streamUrl, connectionInfo) {
+    try {
+        // Configurar video para móviles antes de cargar
+        videoPlayer.crossOrigin = 'anonymous';
+        videoPlayer.preload = 'none';
+        videoPlayer.setAttribute('playsinline', 'true');
+        
+        // Configurar eventos específicos para móviles
+        let loadTimeout;
+        let retryCount = 0;
+        const maxRetries = 5;
+        
+        const attemptLoad = () => {
+            console.log(`📱 Intento ${retryCount + 1}/${maxRetries} - Cargando HLS nativo`);
+            
+            videoPlayer.src = streamUrl;
+            videoPlayer.load();
+            
+            // Timeout más largo para redes móviles
+            loadTimeout = setTimeout(() => {
+                console.warn('⏰ Timeout en carga HLS nativo');
+                if (retryCount < maxRetries - 1) {
+                    retryCount++;
+                    setTimeout(attemptLoad, 2000 * retryCount); // Backoff progresivo
+                } else {
+                    console.error('❌ Máximo de reintentos alcanzado en HLS nativo');
+                    // Intentar con HLS.js como fallback
+                    if (Hls.isSupported()) {
+                        loadHLSForMobileNetwork(streamUrl, connectionInfo);
+                    } else {
+                        tryDirectMobileStreaming(streamUrl, connectionInfo);
+                    }
+                }
+            }, 15000); // 15 segundos timeout
+        };
+        
+        // Eventos de éxito
+        videoPlayer.addEventListener('loadstart', function() {
+            console.log('📱 HLS nativo iniciado');
+            clearTimeout(loadTimeout);
+        }, { once: true });
+        
+        videoPlayer.addEventListener('canplay', function() {
+            console.log('✅ HLS nativo listo para reproducir');
+            hideMobileLoadingIndicator();
+            retryCount = 0;
+        }, { once: true });
+        
+        // Eventos de error
+        videoPlayer.addEventListener('error', function(e) {
+            console.error('❌ Error en HLS nativo:', e);
+            clearTimeout(loadTimeout);
+            
+            if (retryCount < maxRetries - 1) {
+                retryCount++;
+                console.log(`🔄 Reintentando HLS nativo en ${2000 * retryCount}ms`);
+                setTimeout(attemptLoad, 2000 * retryCount);
+            } else {
+                console.log('🔄 Cambiando a HLS.js para red móvil');
+                if (Hls.isSupported()) {
+                    loadHLSForMobileNetwork(streamUrl, connectionInfo);
+                } else {
+                    tryDirectMobileStreaming(streamUrl, connectionInfo);
+                }
+            }
+        }, { once: true });
+        
+        // Iniciar primer intento
+        attemptLoad();
+        
+    } catch (error) {
+        console.error('❌ Error al configurar HLS nativo para móvil:', error);
+        if (Hls.isSupported()) {
+            loadHLSForMobileNetwork(streamUrl, connectionInfo);
+        } else {
+            tryDirectMobileStreaming(streamUrl, connectionInfo);
+        }
+    }
+}
+
+// HLS.js específico para redes móviles
+function loadHLSForMobileNetwork(streamUrl, connectionInfo) {
+    try {
+        // Configuración extremadamente conservadora para redes móviles
+        const mobileHLSConfig = {
+            enableWorker: false,
+            lowLatencyMode: false,
+            debug: true, // Habilitar debug para móviles
+            
+            // Buffer ultra-pequeño
+            maxBufferLength: 3,
+            maxMaxBufferLength: 5,
+            maxBufferSize: 10 * 1000 * 1000, // 10MB máximo
+            maxBufferHole: 0.1,
+            
+            // Timeouts muy largos
+            fragLoadingTimeOut: 60000, // 1 minuto
+            fragLoadingMaxRetry: 10,
+            fragLoadingRetryDelay: 5000, // 5 segundos entre reintentos
+            fragLoadingMaxRetryTimeout: 300000, // 5 minutos máximo
+            
+            manifestLoadingTimeOut: 45000,
+            manifestLoadingMaxRetry: 8,
+            manifestLoadingRetryDelay: 5000,
+            manifestLoadingMaxRetryTimeout: 180000, // 3 minutos
+            
+            // Calidad mínima siempre
+            startLevel: 0,
+            capLevelToPlayerSize: true,
+            
+            // ABR ultra-conservador
+            abrEwmaDefaultEstimate: 100000, // 100kbps inicial
+            abrBandWidthFactor: 0.3,
+            abrBandWidthUpFactor: 0.2,
+            
+            // Headers específicos para móviles
+            xhrSetup: function(xhr, url) {
+                console.log('🌐 Configurando request para móvil:', url);
+                
+                // Headers básicos
+                xhr.setRequestHeader('User-Agent', navigator.userAgent);
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('Cache-Control', 'no-cache');
+                xhr.setRequestHeader('Pragma', 'no-cache');
+                
+                // Timeout muy largo para móviles
+                xhr.timeout = 60000;
+                
+                // Configurar para manejar redirects
+                xhr.withCredentials = false;
+                
+                // Log detallado
+                xhr.addEventListener('loadstart', () => console.log('📱 Iniciando carga:', url));
+                xhr.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        console.log(`📊 Progreso: ${Math.round(e.loaded/e.total*100)}%`);
+                    }
+                });
+                xhr.addEventListener('load', () => console.log('✅ Carga completada:', url));
+                xhr.addEventListener('error', (e) => console.error('❌ Error en carga:', url, e));
+                xhr.addEventListener('timeout', () => console.warn('⏰ Timeout en carga:', url));
+            }
+        };
+        
+        hls = new Hls(mobileHLSConfig);
+        
+        // Eventos específicos para redes móviles
+        setupMobileNetworkHLSEvents(hls, connectionInfo);
+        
+        // Cargar con manejo de errores
+        hls.loadSource(streamUrl);
+        hls.attachMedia(videoPlayer);
+        
+    } catch (error) {
+        console.error('❌ Error al configurar HLS.js para móvil:', error);
+        tryDirectMobileStreaming(streamUrl, connectionInfo);
+    }
+}
+
+// Streaming directo para móviles (último recurso)
+function tryDirectMobileStreaming(streamUrl, connectionInfo) {
+    console.log('🔄 Intentando streaming directo para red móvil');
+    
+    try {
+        // Configurar video para streaming directo
+        videoPlayer.crossOrigin = 'anonymous';
+        videoPlayer.preload = 'none';
+        videoPlayer.src = streamUrl;
+        
+        let loadAttempts = 0;
+        const maxAttempts = 3;
+        
+        const attemptDirectLoad = () => {
+            loadAttempts++;
+            console.log(`📱 Intento directo ${loadAttempts}/${maxAttempts}`);
+            
+            videoPlayer.load();
+            
+            const loadTimeout = setTimeout(() => {
+                console.warn('⏰ Timeout en streaming directo');
+                if (loadAttempts < maxAttempts) {
+                    setTimeout(attemptDirectLoad, 5000);
+                } else {
+                    // Último recurso: intentar con diferentes proxies
+                    tryProxyStreaming(streamUrl, connectionInfo);
+                }
+            }, 30000);
+            
+            videoPlayer.addEventListener('canplay', function() {
+                console.log('✅ Streaming directo exitoso');
+                clearTimeout(loadTimeout);
+                hideMobileLoadingIndicator();
+            }, { once: true });
+            
+            videoPlayer.addEventListener('error', function(e) {
+                console.error('❌ Error en streaming directo:', e);
+                clearTimeout(loadTimeout);
+                if (loadAttempts < maxAttempts) {
+                    setTimeout(attemptDirectLoad, 5000);
+                } else {
+                    tryProxyStreaming(streamUrl, connectionInfo);
+                }
+            }, { once: true });
+        };
+        
+        attemptDirectLoad();
+        
+    } catch (error) {
+        console.error('❌ Error en streaming directo:', error);
+        tryProxyStreaming(streamUrl, connectionInfo);
+    }
+}
+
+// Intentar con proxies (último recurso)
+function tryProxyStreaming(streamUrl, connectionInfo) {
+    console.log('🔄 Intentando con proxies para red móvil');
+    
+    const proxies = [
+        '', // Sin proxy (intento directo)
+        'https://cors-anywhere.herokuapp.com/',
+        'https://api.allorigins.win/raw?url=',
+        'https://thingproxy.freeboard.io/fetch/'
+    ];
+    
+    let proxyIndex = 0;
+    
+    const tryNextProxy = () => {
+        if (proxyIndex >= proxies.length) {
+            console.error('❌ Todos los proxies fallaron');
+            hideMobileLoadingIndicator();
+            showMobileStreamError(connectionInfo);
+            return;
+        }
+        
+        const proxy = proxies[proxyIndex];
+        const proxyUrl = proxy + encodeURIComponent(streamUrl);
+        
+        console.log(`🔄 Intentando proxy ${proxyIndex + 1}/${proxies.length}:`, proxy || 'directo');
+        
+        videoPlayer.src = proxyUrl;
+        videoPlayer.load();
+        
+        const timeout = setTimeout(() => {
+            console.warn(`⏰ Timeout en proxy ${proxyIndex + 1}`);
+            proxyIndex++;
+            tryNextProxy();
+        }, 20000);
+        
+        videoPlayer.addEventListener('canplay', function() {
+            console.log(`✅ Proxy ${proxyIndex + 1} exitoso`);
+            clearTimeout(timeout);
+            hideMobileLoadingIndicator();
+        }, { once: true });
+        
+        videoPlayer.addEventListener('error', function(e) {
+            console.error(`❌ Error en proxy ${proxyIndex + 1}:`, e);
+            clearTimeout(timeout);
+            proxyIndex++;
+            tryNextProxy();
+        }, { once: true });
+    };
+    
+    tryNextProxy();
+}
+
+// Eventos HLS específicos para redes móviles
+function setupMobileNetworkHLSEvents(hls, connectionInfo) {
+    let networkRetries = 0;
+    const maxNetworkRetries = 8;
+    
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+        console.log('✅ Manifest parseado en red móvil');
+        hideMobileLoadingIndicator();
+        networkRetries = 0;
+        
+        // Forzar calidad mínima
+        hls.startLevel = 0;
+        hls.nextLevel = 0;
+    });
+    
+    hls.on(Hls.Events.ERROR, function(event, data) {
+        console.error('❌ Error HLS en red móvil:', data);
+        
+        if (data.fatal) {
+            switch(data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.log('🔄 Error de red en móvil, reintentando...');
+                    if (networkRetries < maxNetworkRetries) {
+                        networkRetries++;
+                        const delay = Math.min(5000 * networkRetries, 30000); // Hasta 30s
+                        console.log(`⏳ Reintentando en ${delay}ms (${networkRetries}/${maxNetworkRetries})`);
+                        setTimeout(() => {
+                            try {
+                                hls.startLoad();
+                            } catch (err) {
+                                console.error('❌ Error al reintentar:', err);
+                                tryDirectMobileStreaming(hls.url, connectionInfo);
+                            }
+                        }, delay);
+                    } else {
+                        console.log('🔄 Máximo de reintentos de red alcanzado, cambiando a directo');
+                        tryDirectMobileStreaming(hls.url, connectionInfo);
+                    }
+                    break;
+                    
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log('🔄 Error de media en móvil, recuperando...');
+                    try {
+                        hls.recoverMediaError();
+                    } catch (err) {
+                        console.error('❌ No se pudo recuperar error de media:', err);
+                        tryDirectMobileStreaming(hls.url, connectionInfo);
+                    }
+                    break;
+                    
+                default:
+                    console.error('❌ Error fatal no recuperable en móvil');
+                    tryDirectMobileStreaming(hls.url, connectionInfo);
+                    break;
+            }
+        }
+    });
+    
+    // Monitoreo específico para móviles
+    hls.on(Hls.Events.FRAG_LOADING, function(event, data) {
+        console.log('📱 Cargando fragmento:', data.frag.url);
+    });
+    
+    hls.on(Hls.Events.FRAG_LOADED, function(event, data) {
+        console.log('✅ Fragmento cargado:', data.stats.total, 'bytes');
+    });
+    
+    hls.on(Hls.Events.FRAG_LOAD_ERROR, function(event, data) {
+        console.error('❌ Error cargando fragmento:', data);
+    });
+}
+
 // Intentar streaming de fallback para móviles
 function tryFallbackStreaming(streamUrl, connectionInfo) {
     console.log('🔄 Intentando streaming de fallback para móvil');
@@ -1119,36 +1505,8 @@ function tryFallbackStreaming(streamUrl, connectionInfo) {
         return;
     }
     
-    // Intentar cargar directamente en el video element
-    try {
-        videoPlayer.src = streamUrl;
-        videoPlayer.load();
-        
-        // Configurar eventos para fallback
-        videoPlayer.addEventListener('error', function(e) {
-            console.error('❌ Error en fallback streaming:', e);
-            
-            // Último intento: proxy/cors bypass
-            const proxyUrl = `https://cors-anywhere.herokuapp.com/${streamUrl}`;
-            console.log('🔄 Intentando con proxy CORS:', proxyUrl);
-            
-            videoPlayer.src = proxyUrl;
-            videoPlayer.load();
-            
-            videoPlayer.addEventListener('error', function() {
-                showMobileStreamError(connectionInfo);
-            }, { once: true });
-            
-        }, { once: true });
-        
-        videoPlayer.addEventListener('loadstart', function() {
-            console.log('✅ Fallback streaming iniciado');
-        }, { once: true });
-        
-    } catch (error) {
-        console.error('❌ Error en fallback streaming:', error);
-        showMobileStreamError(connectionInfo);
-    }
+    // Para móviles, usar la estrategia específica de red móvil
+    loadMobileNetworkStream(streamUrl, connectionInfo);
 }
 
 // Manejar cuando el video se detiene en móviles
