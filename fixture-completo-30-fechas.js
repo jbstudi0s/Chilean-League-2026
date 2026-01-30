@@ -17,7 +17,7 @@ const partidosData = [
         fecha: "2026-01-30",
         escudoLocal: "img/udechile.svg",
         escudoVisita: "img/audax.svg",
-        link: "https://rci1w.envivoslatam.org/event5/tracks-v1a1/mono.m3u8?ip=190.101.34.107&token=7009c0aa980f408f22ea24541769bb24e60b335f-18-1769773233-1769719233"
+        link: "https://smjt9q.envivoslatam.org/hotflix/premiere1/index.m3u8?token=7037b67f2b51f232ef7009ff24568ba29a0ce142-f4-1769779941-1769725941&ip=190.101.34.107"
     },
 
     // ========================================
