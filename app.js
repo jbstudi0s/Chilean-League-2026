@@ -644,15 +644,6 @@ function openVideoPlayer(partido) {
     
     // Cargar video
     loadHLSStream(partido.link);
-    
-    // En móvil, sugerir pantalla completa
-    if (isMobile()) {
-        setTimeout(() => {
-            if (confirm('¿Deseas ver el partido en pantalla completa?')) {
-                toggleFullscreen();
-            }
-        }, 1000);
-    }
 }
 
 function closeVideoPlayer() {
@@ -686,51 +677,76 @@ function loadHLSStream(streamUrl) {
     const connectionInfo = getConnectionInfo();
     console.log('Información de conexión:', connectionInfo);
     
+    // Configurar video player para móviles antes de cargar stream
+    if (connectionInfo.isMobile) {
+        setupMobileVideoPlayer();
+    }
+    
     if (Hls.isSupported()) {
-        // Configuración optimizada para redes móviles
+        // Configuración ultra-agresiva para redes móviles
         const hlsConfig = {
-            enableWorker: true,
-            lowLatencyMode: false, // Desactivar para mejor estabilidad en móviles
-            maxBufferLength: connectionInfo.isMobile ? 10 : 30, // Buffer más pequeño en móviles
-            maxMaxBufferLength: connectionInfo.isMobile ? 20 : 60,
-            maxBufferSize: connectionInfo.isMobile ? 60 * 1000 * 1000 : 120 * 1000 * 1000, // 60MB vs 120MB
-            maxBufferHole: 0.5,
-            highBufferWatchdogPeriod: 2,
-            nudgeOffset: 0.1,
-            nudgeMaxRetry: 3,
-            maxFragLookUpTolerance: 0.25,
-            liveSyncDurationCount: connectionInfo.isMobile ? 2 : 3,
-            liveMaxLatencyDurationCount: connectionInfo.isMobile ? 5 : 10,
-            // Configuración específica para redes móviles
-            abrEwmaFastLive: connectionInfo.isMobile ? 2.0 : 3.0,
-            abrEwmaSlowLive: connectionInfo.isMobile ? 7.0 : 9.0,
-            abrEwmaFastVoD: connectionInfo.isMobile ? 2.0 : 3.0,
-            abrEwmaSlowVoD: connectionInfo.isMobile ? 7.0 : 9.0,
-            abrEwmaDefaultEstimate: connectionInfo.isMobile ? 500000 : 1000000, // 500kbps vs 1Mbps inicial
-            abrBandWidthFactor: connectionInfo.isMobile ? 0.7 : 0.95,
-            abrBandWidthUpFactor: connectionInfo.isMobile ? 0.6 : 0.7,
-            // Configuración de fragmentos
-            fragLoadingTimeOut: connectionInfo.isMobile ? 30000 : 20000, // 30s vs 20s timeout
-            fragLoadingMaxRetry: connectionInfo.isMobile ? 6 : 3,
-            fragLoadingRetryDelay: connectionInfo.isMobile ? 2000 : 1000,
-            fragLoadingMaxRetryTimeout: connectionInfo.isMobile ? 64000 : 32000,
-            // Configuración de manifiestos
-            manifestLoadingTimeOut: connectionInfo.isMobile ? 20000 : 10000,
-            manifestLoadingMaxRetry: connectionInfo.isMobile ? 4 : 2,
-            manifestLoadingRetryDelay: connectionInfo.isMobile ? 2000 : 1000,
-            manifestLoadingMaxRetryTimeout: connectionInfo.isMobile ? 32000 : 16000,
-            // Configuración de nivel inicial
-            startLevel: connectionInfo.isMobile ? (connectionInfo.effectiveType === '2g' ? 0 : 1) : -1,
+            enableWorker: false, // Desactivar worker en móviles para mejor compatibilidad
+            lowLatencyMode: false,
+            // Buffer extremadamente conservador para móviles
+            maxBufferLength: connectionInfo.isMobile ? 5 : 30,
+            maxMaxBufferLength: connectionInfo.isMobile ? 10 : 60,
+            maxBufferSize: connectionInfo.isMobile ? 30 * 1000 * 1000 : 120 * 1000 * 1000, // 30MB vs 120MB
+            maxBufferHole: connectionInfo.isMobile ? 0.2 : 0.5,
+            highBufferWatchdogPeriod: connectionInfo.isMobile ? 1 : 2,
+            nudgeOffset: connectionInfo.isMobile ? 0.05 : 0.1,
+            nudgeMaxRetry: connectionInfo.isMobile ? 5 : 3,
+            maxFragLookUpTolerance: connectionInfo.isMobile ? 0.1 : 0.25,
+            liveSyncDurationCount: connectionInfo.isMobile ? 1 : 3,
+            liveMaxLatencyDurationCount: connectionInfo.isMobile ? 3 : 10,
+            // ABR ultra-conservador para móviles
+            abrEwmaFastLive: connectionInfo.isMobile ? 1.5 : 3.0,
+            abrEwmaSlowLive: connectionInfo.isMobile ? 5.0 : 9.0,
+            abrEwmaFastVoD: connectionInfo.isMobile ? 1.5 : 3.0,
+            abrEwmaSlowVoD: connectionInfo.isMobile ? 5.0 : 9.0,
+            abrEwmaDefaultEstimate: connectionInfo.isMobile ? 200000 : 1000000, // 200kbps vs 1Mbps inicial
+            abrBandWidthFactor: connectionInfo.isMobile ? 0.5 : 0.95,
+            abrBandWidthUpFactor: connectionInfo.isMobile ? 0.4 : 0.7,
+            abrMaxWithRealBitrate: connectionInfo.isMobile,
+            // Timeouts muy largos para redes móviles inestables
+            fragLoadingTimeOut: connectionInfo.isMobile ? 45000 : 20000, // 45s vs 20s
+            fragLoadingMaxRetry: connectionInfo.isMobile ? 8 : 3,
+            fragLoadingRetryDelay: connectionInfo.isMobile ? 3000 : 1000,
+            fragLoadingMaxRetryTimeout: connectionInfo.isMobile ? 120000 : 32000, // 2 minutos vs 32s
+            // Manifiestos con timeouts extendidos
+            manifestLoadingTimeOut: connectionInfo.isMobile ? 30000 : 10000,
+            manifestLoadingMaxRetry: connectionInfo.isMobile ? 6 : 2,
+            manifestLoadingRetryDelay: connectionInfo.isMobile ? 3000 : 1000,
+            manifestLoadingMaxRetryTimeout: connectionInfo.isMobile ? 60000 : 16000,
+            // Configuración de nivel inicial muy conservadora
+            startLevel: connectionInfo.isMobile ? 0 : -1, // Siempre empezar en calidad más baja en móviles
             testBandwidth: connectionInfo.isMobile,
             progressive: true,
-            // Headers para mejorar compatibilidad con redes móviles
+            capLevelToPlayerSize: connectionInfo.isMobile, // Limitar calidad al tamaño del player en móviles
+            // Headers y configuración de red específica para móviles
             xhrSetup: function(xhr, url) {
+                // Headers para mejorar compatibilidad con redes móviles
                 xhr.setRequestHeader('Cache-Control', 'no-cache');
                 xhr.setRequestHeader('Pragma', 'no-cache');
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('Accept-Encoding', 'identity'); // Evitar compresión en móviles
+                xhr.setRequestHeader('Connection', 'keep-alive');
+                
                 if (connectionInfo.isMobile) {
-                    xhr.timeout = 30000; // 30 segundos timeout para móviles
+                    xhr.timeout = 45000; // 45 segundos timeout para móviles
+                    // Configurar para manejar redirects
+                    xhr.withCredentials = false;
                 }
-            }
+                
+                // Log para debug
+                console.log('🌐 Cargando:', url);
+            },
+            // Configuración adicional para móviles
+            backBufferLength: connectionInfo.isMobile ? 5 : 30,
+            maxSeekHole: connectionInfo.isMobile ? 0.5 : 2,
+            seekHoleNudgeDuration: connectionInfo.isMobile ? 0.01 : 0.1,
+            stalledInBufferedNudgeSize: connectionInfo.isMobile ? 0.01 : 0.1,
+            maxStarvationDelay: connectionInfo.isMobile ? 1 : 4,
+            maxLoadingDelay: connectionInfo.isMobile ? 1 : 4
         };
         
         hls = new Hls(hlsConfig);
@@ -738,15 +754,26 @@ function loadHLSStream(streamUrl) {
         // Configurar eventos específicos para redes móviles
         setupMobileHLSEvents(hls, connectionInfo);
         
-        hls.loadSource(streamUrl);
-        hls.attachMedia(videoPlayer);
+        // Cargar stream con manejo de errores mejorado
+        try {
+            hls.loadSource(streamUrl);
+            hls.attachMedia(videoPlayer);
+        } catch (error) {
+            console.error('❌ Error al cargar HLS:', error);
+            // Intentar con configuración de fallback
+            setTimeout(() => {
+                tryFallbackStreaming(streamUrl, connectionInfo);
+            }, 2000);
+        }
         
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
         // Safari soporta HLS nativamente - configurar para móviles
+        console.log('🍎 Usando HLS nativo de Safari');
         videoPlayer.src = streamUrl;
         setupNativeHLSForMobile(videoPlayer, connectionInfo);
     } else {
-        showStreamError();
+        // Fallback para navegadores sin soporte HLS
+        tryFallbackStreaming(streamUrl, connectionInfo);
     }
 }
 
@@ -954,6 +981,265 @@ function setupNativeHLSForMobile(videoElement, connectionInfo) {
     });
 }
 
+// Configurar video player específicamente para móviles
+function setupMobileVideoPlayer() {
+    if (!videoPlayer) return;
+    
+    console.log('📱 Configurando video player para móvil');
+    
+    // Configuraciones específicas para móviles
+    videoPlayer.setAttribute('playsinline', 'true'); // Evitar fullscreen automático en iOS
+    videoPlayer.setAttribute('webkit-playsinline', 'true');
+    videoPlayer.setAttribute('x5-video-player-type', 'h5'); // Para navegadores chinos
+    videoPlayer.setAttribute('x5-video-player-fullscreen', 'true');
+    videoPlayer.setAttribute('x5-video-orientation', 'landscape'); // Forzar landscape
+    videoPlayer.muted = false; // Asegurar que no esté muted
+    videoPlayer.controls = true; // Mostrar controles nativos
+    videoPlayer.preload = 'none'; // No precargar en móviles para ahorrar datos
+    
+    // Forzar orientación landscape cuando se reproduce
+    videoPlayer.addEventListener('play', function() {
+        console.log('🔄 Video iniciado - forzando orientación landscape');
+        forceLandscapeOrientation();
+        
+        // Auto fullscreen después de un breve delay
+        setTimeout(() => {
+            if (isMobile() && !document.fullscreenElement) {
+                console.log('📱 Activando fullscreen automático para móvil');
+                enterMobileFullscreen();
+            }
+        }, 1000);
+    });
+    
+    // Manejar eventos específicos de móviles
+    videoPlayer.addEventListener('loadstart', function() {
+        console.log('📱 Iniciando carga de video en móvil');
+        showMobileLoadingIndicator();
+    });
+    
+    videoPlayer.addEventListener('canplay', function() {
+        console.log('✅ Video listo para reproducir en móvil');
+        hideMobileLoadingIndicator();
+    });
+    
+    videoPlayer.addEventListener('waiting', function() {
+        console.log('⏳ Video esperando datos en móvil');
+        showMobileBufferingIndicator();
+    });
+    
+    videoPlayer.addEventListener('playing', function() {
+        console.log('▶️ Video reproduciéndose en móvil');
+        hideMobileBufferingIndicator();
+    });
+    
+    videoPlayer.addEventListener('stalled', function() {
+        console.warn('⏸️ Video detenido en móvil - intentando recuperar');
+        handleMobileStall();
+    });
+}
+
+// Forzar orientación landscape en móviles
+function forceLandscapeOrientation() {
+    if (!isMobile()) return;
+    
+    try {
+        // Intentar usar Screen Orientation API
+        if (screen.orientation && screen.orientation.lock) {
+            screen.orientation.lock('landscape').then(() => {
+                console.log('🔄 Orientación landscape activada');
+            }).catch(err => {
+                console.warn('⚠️ No se pudo forzar orientación:', err);
+            });
+        }
+        
+        // Fallback: CSS para forzar landscape
+        const style = document.createElement('style');
+        style.textContent = `
+            @media screen and (orientation: portrait) {
+                .video-modal-content {
+                    transform: rotate(90deg);
+                    transform-origin: center center;
+                    width: 100vh !important;
+                    height: 100vw !important;
+                    position: fixed !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+    } catch (error) {
+        console.warn('⚠️ Error al forzar orientación:', error);
+    }
+}
+
+// Entrar en fullscreen específico para móviles
+function enterMobileFullscreen() {
+    const videoContainer = document.querySelector('.video-modal-content');
+    
+    try {
+        // Intentar fullscreen del contenedor de video
+        if (videoContainer.requestFullscreen) {
+            videoContainer.requestFullscreen();
+        } else if (videoContainer.webkitRequestFullscreen) {
+            videoContainer.webkitRequestFullscreen();
+        } else if (videoContainer.mozRequestFullScreen) {
+            videoContainer.mozRequestFullScreen();
+        } else if (videoContainer.msRequestFullscreen) {
+            videoContainer.msRequestFullscreen();
+        } else if (videoPlayer.webkitEnterFullscreen) {
+            // Fallback para iOS Safari
+            videoPlayer.webkitEnterFullscreen();
+        }
+        
+        console.log('📱 Fullscreen activado para móvil');
+        
+    } catch (error) {
+        console.warn('⚠️ Error al activar fullscreen:', error);
+        // Fallback: CSS fullscreen
+        videoContainer.style.cssText = `
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 99999 !important;
+            background: black !important;
+        `;
+    }
+}
+
+// Intentar streaming de fallback para móviles
+function tryFallbackStreaming(streamUrl, connectionInfo) {
+    console.log('🔄 Intentando streaming de fallback para móvil');
+    
+    if (!connectionInfo.isMobile) {
+        showStreamError();
+        return;
+    }
+    
+    // Intentar cargar directamente en el video element
+    try {
+        videoPlayer.src = streamUrl;
+        videoPlayer.load();
+        
+        // Configurar eventos para fallback
+        videoPlayer.addEventListener('error', function(e) {
+            console.error('❌ Error en fallback streaming:', e);
+            
+            // Último intento: proxy/cors bypass
+            const proxyUrl = `https://cors-anywhere.herokuapp.com/${streamUrl}`;
+            console.log('🔄 Intentando con proxy CORS:', proxyUrl);
+            
+            videoPlayer.src = proxyUrl;
+            videoPlayer.load();
+            
+            videoPlayer.addEventListener('error', function() {
+                showMobileStreamError(connectionInfo);
+            }, { once: true });
+            
+        }, { once: true });
+        
+        videoPlayer.addEventListener('loadstart', function() {
+            console.log('✅ Fallback streaming iniciado');
+        }, { once: true });
+        
+    } catch (error) {
+        console.error('❌ Error en fallback streaming:', error);
+        showMobileStreamError(connectionInfo);
+    }
+}
+
+// Manejar cuando el video se detiene en móviles
+function handleMobileStall() {
+    if (!hls || !isMobile()) return;
+    
+    console.log('🔄 Manejando stall en móvil');
+    
+    // Reducir calidad agresivamente
+    if (hls.currentLevel > 0) {
+        hls.nextLevel = 0;
+        console.log('📉 Reduciendo a calidad mínima por stall');
+    }
+    
+    // Intentar recuperar después de un delay
+    setTimeout(() => {
+        try {
+            if (videoPlayer.readyState < 3) { // HAVE_FUTURE_DATA
+                console.log('🔄 Intentando recuperar de stall');
+                hls.startLoad();
+            }
+        } catch (error) {
+            console.error('❌ Error al recuperar de stall:', error);
+        }
+    }, 3000);
+}
+
+// Mostrar indicador de carga para móviles
+function showMobileLoadingIndicator() {
+    let indicator = document.getElementById('mobile-loading');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'mobile-loading';
+        indicator.innerHTML = '⏳ Cargando stream...';
+        indicator.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1000;
+            font-size: 14px;
+        `;
+        document.querySelector('.video-modal-content').appendChild(indicator);
+    }
+    indicator.style.display = 'block';
+}
+
+// Ocultar indicador de carga
+function hideMobileLoadingIndicator() {
+    const indicator = document.getElementById('mobile-loading');
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
+}
+
+// Mostrar indicador de buffering
+function showMobileBufferingIndicator() {
+    let indicator = document.getElementById('mobile-buffering');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'mobile-buffering';
+        indicator.innerHTML = '⏸️ Cargando...';
+        indicator.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 5px;
+            z-index: 1000;
+            font-size: 12px;
+        `;
+        document.querySelector('.video-modal-content').appendChild(indicator);
+    }
+    indicator.style.display = 'block';
+}
+
+// Ocultar indicador de buffering
+function hideMobileBufferingIndicator() {
+    const indicator = document.getElementById('mobile-buffering');
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
+}
+
 // Mostrar error específico para redes móviles
 function showMobileStreamError(connectionInfo) {
     let message = 'Error al cargar la transmisión.';
@@ -967,7 +1253,7 @@ function showMobileStreamError(connectionInfo) {
             message += '\n\n📱 Red móvil detectada: Si tienes problemas, intenta conectarte a WiFi.';
         }
         
-        message += '\n\n🔄 Consejos:\n• Verifica tu señal móvil\n• Cierra otras apps que usen internet\n• Intenta recargar la página';
+        message += '\n\n🔄 Consejos:\n• Verifica tu señal móvil\n• Cierra otras apps que usen internet\n• Intenta recargar la página\n• Rota el teléfono a horizontal';
     } else {
         message += '\n\nVerifica tu conexión a internet e inténtalo nuevamente.';
     }
